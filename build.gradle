@@ -1,0 +1,55 @@
+plugins {
+    id("java-gradle-plugin")
+    id("maven-publish")
+}
+
+group("net.auoeke")
+version("0.0.0")
+
+sourceSets {
+    main {
+        java.srcDirs = ["source"]
+    }
+
+    test {
+        java.srcDirs = ["test/source"]
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation(gradleTestKit(), "org.junit.jupiter:junit-jupiter-api:latest.release")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+
+}
+
+test {
+    dependsOn(cleanTest)
+
+    useJUnitPlatform()
+}
+
+gradlePlugin {
+    plugins {
+        main {
+            id = "version-expander"
+            implementationClass = "net.auoeke.versionexpander.VersionExpansionPlugin"
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            url = "https://maven.auoeke.net"
+
+            credentials {
+                username = System.properties["maven.username"]
+                password = System.properties["maven.password"]
+            }
+        }
+    }
+}

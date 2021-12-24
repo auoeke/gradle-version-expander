@@ -1,0 +1,38 @@
+plugins {
+    id("version-expander")
+    id("java")
+    id("maven-publish")
+}
+
+group("net.auoeke.constant-latest-version.test")
+version("1.2.3")
+
+sourceSets {
+    main {
+        java.srcDirs = ["source"]
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {url = "https://maven.fabricmc.net"}
+    maven {url = "https://maven.auoeke.net"}
+}
+
+dependencies {
+    implementation("com.google.code.gson:gson:latest.release")
+    implementation("net.auoeke:wheel:+")
+    implementation("org.junit.jupiter:junit-jupiter:[4,)")
+
+    constraints {
+        implementation("org.ow2.asm:asm:9.0")
+    }
+}
+
+publishing {
+    publications {
+        main(MavenPublication) {
+            from(components.java)
+        }
+    }
+}
