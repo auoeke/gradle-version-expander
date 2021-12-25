@@ -48,6 +48,7 @@ is replaced by
     </dependency>
 </dependencies>
 ```
+.
 ### Gradle metadata
 ```json
         {
@@ -101,3 +102,4 @@ is replaced by
           }
         }
 ```
+.
