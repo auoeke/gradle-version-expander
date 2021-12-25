@@ -1,74 +1,61 @@
 package net.auoeke.versionexpander;
 
 import java.util.HashMap;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Stream;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.artifacts.ArtifactCollection;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.ExternalDependency;
-import org.gradle.api.artifacts.MutableVersionConstraint;
-import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.api.publish.PublishingExtension;
-import org.gradle.api.publish.maven.MavenPublication;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
+import org.gradle.api.artifacts.ModuleIdentifier;
+import org.gradle.api.artifacts.ModuleVersionIdentifier;
+import org.gradle.api.internal.component.SoftwareComponentInternal;
+import org.gradle.api.plugins.internal.DefaultAdhocSoftwareComponent;
+import org.gradle.api.publish.maven.tasks.AbstractPublishToMaven;
+import org.gradle.util.internal.GUtil;
 
 @SuppressWarnings("unused")
 public class VersionExpansionPlugin implements Plugin<Project> {
-    private static Stream<Node> children(Node node) {
-        return Stream.iterate(node.getFirstChild(), Objects::nonNull, Node::getNextSibling).filter(Element.class::isInstance);
-    }
-
-    private static Optional<Node> maybeChild(Node node, String name) {
-        return children(node).filter(child -> child.getNodeName().equals(name)).findFirst();
-    }
-
-    private static Node child(Node node, String name) {
-        return maybeChild(node, name).get();
-    }
-
-    private static String text(Node node, String name) {
-        return child(node, name).getTextContent();
-    }
-
     @Override
     public void apply(Project project) {
         var extension = project.getExtensions().create("versionExpansion", VersionExpansionExtension.class);
-        var resolvedDependencies = new HashMap<String, String>();
 
-        project.getConfigurations().all(configuration -> configuration.getIncoming().afterResolve(dependencies -> {
-            Stream.of(dependencies.getArtifacts())
-                .mapMulti(ArtifactCollection::forEach)
-                .map(result1 -> result1.getVariant().getOwner())
-                .filter(ModuleComponentIdentifier.class::isInstance)
-                .map(ModuleComponentIdentifier.class::cast)
-                .forEach(component -> resolvedDependencies.put(component.getModuleIdentifier().toString(), component.getVersion()));
+        project.getTasks().withType(AbstractPublishToMaven.class).all(task -> project.getComponents().withType(SoftwareComponentInternal.class).all(component -> GUtil.uncheckedCall(() -> {
+            var field = DefaultAdhocSoftwareComponent.class.getDeclaredField("variants");
+            field.trySetAccessible();
 
-            dependencies.getDependencies().withType(ExternalDependency.class).forEach(dependency -> {
-                if (dependency.getVersionConstraint() instanceof MutableVersionConstraint constraint && extension.predicate.test(dependency.getVersion())) {
-                    constraint.require(resolvedDependencies.get(dependency.getModule().toString()));
-                }
-            });
-        }));
+            return (Map<Configuration, ?>) field.get(component);
+        }).keySet().forEach(variant -> {
+            var configurations = new HashMap<Configuration, Map<ModuleIdentifier, String>>();
 
-        project.afterEvaluate(project1 -> project1.getExtensions().getByType(PublishingExtension.class).getPublications().withType(MavenPublication.class).all(publication -> {
-            publication.getPom().withXml(pom -> children(child(pom.asElement(), "dependencies")).forEach(dependency -> {
-                maybeChild(dependency, "version").filter(version -> extension.predicate.test(version.getTextContent())).ifPresent(versionNode -> {
-                    var version = resolvedDependencies.get(text(dependency, "groupId") + ":" + text(dependency, "artifactId"));
+            variant.getHierarchy().forEach(configuration -> project.getConfigurations().stream()
+                .filter(c -> c.isCanBeResolved() && !c.getName().equals(Dependency.DEFAULT_CONFIGURATION) && c.getHierarchy().contains(configuration))
+                .forEach(c -> configurations.computeIfAbsent(c, c1 -> c1.getResolvedConfiguration().getFirstLevelModuleDependencies().stream()
+                    .map(dependency -> dependency.getModule().getId())
+                    .collect(Collectors.toMap(ModuleVersionIdentifier::getModule, ModuleVersionIdentifier::getVersion))
+                ))
+            );
 
-                    if (version != null) {
-                        if (versionNode == null) {
-                            versionNode = ((Document) pom.asElement().getParentNode()).createElement("version");
-                            dependency.appendChild(versionNode);
+            configurations.forEach((configuration, versions) -> {
+                variant.getAllDependencies().forEach(dependency -> {
+                    if (dependency instanceof ExternalDependency external) {
+                        var version = versions.get(external.getModule());
+
+                        if (version != null && extension.test(configuration, external.getModule(), dependency.getVersion(), version)) {
+                            external.version(constraint -> constraint.require(version));
                         }
-
-                        versionNode.setTextContent(version);
                     }
                 });
-            }));
-        }));
+
+                variant.getAllDependencyConstraints().forEach(constraint -> {
+                    var version = versions.get(constraint.getModule());
+
+                    if (version != null && extension.test(configuration, constraint.getModule(), constraint.getVersion(), version)) {
+                        constraint.version(versionConstraint -> versionConstraint.require(version));
+                    }
+                });
+            });
+        })));
     }
 }

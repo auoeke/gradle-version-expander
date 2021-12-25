@@ -14,7 +14,7 @@ class Tests {
         return GradleRunner.create()
             .withProjectDir(new File("test/project"))
             .withPluginClasspath()
-            .withArguments("-s", "clean", "publishToMavenLocal")
+            .withArguments("-s", "--warning-mode", "all", "clean", "publishToMavenLocal", "dependencies")
             .forwardOutput();
     }
 }

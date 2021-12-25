@@ -2,31 +2,29 @@ package net.auoeke.versionexpander;
 
 import groovy.lang.Closure;
 import java.util.function.Predicate;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ModuleIdentifier;
 
 public class VersionExpansionExtension {
-    public Predicate<String> predicate = version -> true;
+    public Predicate<ExpansionContext> predicate = version -> true;
 
-    public void include(Predicate<String> predicate) {
+    public void include(Predicate<ExpansionContext> predicate) {
         this.predicate = this.predicate.or(predicate);
     }
 
-    public void include(Closure predicate) {
-        this.include(version -> (boolean) predicate.call(version));
+    public void include(Closure<Boolean> predicate) {
+        this.include(predicate::call);
     }
 
-    public void include(String substring) {
-        this.include(version -> version.contains(substring));
-    }
-
-    public void exclude(Predicate<String> predicate) {
+    public void exclude(Predicate<ExpansionContext> predicate) {
         this.predicate = this.predicate.and(predicate.negate());
     }
 
-    public void exclude(Closure predicate) {
-        this.exclude(version -> (boolean) predicate.call(version));
+    public void exclude(Closure<Boolean> predicate) {
+        this.exclude(predicate::call);
     }
 
-    public void exclude(String substring) {
-        this.exclude(version -> version.contains(substring));
+    public boolean test(Configuration configuration, ModuleIdentifier module, String version, String resolvedVersion) {
+        return this.predicate.test(new ExpansionContext(configuration, module, version, resolvedVersion));
     }
 }
